@@ -52,7 +52,7 @@ class SplashGenerator {
     lines.add('');
     lines.add('Next:');
     lines.add('  1. Wrap app with VorzelaSplashGate(animation: …)');
-    lines.add('  2. Call FlutterNativeSplash.preserve / remove as needed');
+    lines.add('  2. Call VorzelaNativeSplash.preserve / remove as needed');
     lines.add('  3. flutter clean && flutter run');
     return GenerateResult(lines.join('\n'));
   }
