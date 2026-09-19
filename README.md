@@ -30,6 +30,8 @@ package generates both layers.
 | Optional AVD pulse icon (API 31+) | ✓ |
 | iOS LaunchScreen storyboard | ✓ |
 | Flutter exit: `fade` / `scale_fade` / `pulse` | ✓ |
+| Custom / built-in loaders under logo | ✓ |
+| Optional bottom footer text / widget | ✓ |
 | Web | Not included (use CSS / Flutter web splash) |
 
 ---
@@ -109,7 +111,11 @@ void main() {
       animation: kVorzelaSplashExitAnimation, // or SplashExitAnimation.scaleFade
       backgroundColor: const Color(0xFF0F0F0F),
       logo: Image.asset('assets/brand/logo.png', width: 96),
-      // ready: authBootstrap(), // optional
+      loaderStyle: SplashLoaderStyle.circular, // none | circular | dots | linear
+      // loader: MyLottie(),                 // custom widget under the logo
+      footerText: 'Vorzela',                 // optional bottom caption
+      // footer: Text('v1.0'),               // or a custom footer widget
+      // ready: authBootstrap(),             // optional
       child: const MyApp(),
     ),
   );
@@ -124,6 +130,13 @@ void main() {
 | `fade` | Gmail-like soft dissolve |
 | `pulse` | Brand heartbeat then dissolve |
 | `none` | Instant remove |
+
+### Loaders & footer
+
+Logo is centered; the loader sits **under** it (`logoLoaderGap`, default 28). Footer is
+pinned to the **bottom safe area** (`footerText` or `footer`). Controllers /
+tickers (gate + dots loader) are disposed; async exit work is cancelled on
+unmount so there are no post-`dispose` `setState` leaks.
 
 ---
 
