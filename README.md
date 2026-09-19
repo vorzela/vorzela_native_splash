@@ -112,7 +112,13 @@ void main() {
       backgroundColor: const Color(0xFF0F0F0F),
       logo: Image.asset('assets/brand/logo.png', width: 96),
       loaderStyle: SplashLoaderStyle.circular, // none | circular | dots | linear
-      // loader: MyLottie(),                 // custom widget under the logo
+      loaderTheme: const SplashLoaderTheme(
+        color: Color(0xFFE50914),
+        size: 36,
+        strokeWidth: 3,
+        trackColor: Colors.white24,
+      ),
+      // loader: SplashCircularLoader(color: Colors.red, size: 40), // or fully custom
       footerText: 'Vorzela',                 // optional bottom caption
       // footer: Text('v1.0'),               // or a custom footer widget
       // ready: authBootstrap(),             // optional
@@ -137,6 +143,11 @@ Logo is centered; the loader sits **under** it (`logoLoaderGap`, default 28). Fo
 pinned to the **bottom safe area** (`footerText` or `footer`). Controllers /
 tickers (gate + dots loader) are disposed; async exit work is cancelled on
 unmount so there are no post-`dispose` `setState` leaks.
+
+Style built-in loaders with `SplashLoaderTheme` (`color`,
+`trackColor`, `size`, `strokeWidth`, `strokeCap`, `linearWidth` / `linearHeight`,
+`dotSize` / `dotGap`). Or pass `loader:` with `SplashCircularLoader(...)` /
+any widget for full control. `loaderColor` is a shorthand for theme color.
 
 ---
 

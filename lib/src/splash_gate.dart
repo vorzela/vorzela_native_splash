@@ -43,6 +43,7 @@ class VorzelaSplashGate extends StatefulWidget {
     this.logo,
     this.loader,
     this.loaderStyle = SplashLoaderStyle.circular,
+    this.loaderTheme = const SplashLoaderTheme(),
     this.loaderColor,
     this.logoLoaderGap = 28,
     this.footer,
@@ -65,7 +66,22 @@ class VorzelaSplashGate extends StatefulWidget {
   /// Built-in loader when [loader] is null.
   final SplashLoaderStyle loaderStyle;
 
-  /// Tint for built-in loaders (defaults to white @ 85%).
+  /// Size / stroke / track / dots styling for [loaderStyle].
+  ///
+  /// Ignored when [loader] is set. Example:
+  /// ```dart
+  /// loaderStyle: SplashLoaderStyle.circular,
+  /// loaderTheme: SplashLoaderTheme(
+  ///   color: Color(0xFFFF0000),
+  ///   size: 36,
+  ///   strokeWidth: 3,
+  ///   trackColor: Colors.white24,
+  /// ),
+  /// ```
+  final SplashLoaderTheme loaderTheme;
+
+  /// Convenience tint for built-in loaders (overrides [loaderTheme.color]).
+  /// Defaults to white @ 85% when both are null.
   final Color? loaderColor;
 
   /// Space between logo and loader.
@@ -147,13 +163,13 @@ class _VorzelaSplashGateState extends State<VorzelaSplashGate>
     super.dispose();
   }
 
-  Widget? _resolveLoader(Color color) {
+  Widget? _resolveLoader(SplashLoaderTheme theme) {
     if (widget.loader != null) return widget.loader;
     return switch (widget.loaderStyle) {
       SplashLoaderStyle.none => null,
-      SplashLoaderStyle.circular => SplashCircularLoader(color: color),
-      SplashLoaderStyle.dots => SplashDotsLoader(color: color),
-      SplashLoaderStyle.linear => SplashLinearLoader(color: color),
+      SplashLoaderStyle.circular => SplashCircularLoader.fromTheme(theme),
+      SplashLoaderStyle.dots => SplashDotsLoader.fromTheme(theme),
+      SplashLoaderStyle.linear => SplashLinearLoader.fromTheme(theme),
     };
   }
 
@@ -179,9 +195,12 @@ class _VorzelaSplashGateState extends State<VorzelaSplashGate>
     if (!_overlay) return widget.child;
 
     final bg = widget.backgroundColor ?? const Color(0xFF0F0F0F);
-    final loaderColor =
-        widget.loaderColor ?? Colors.white.withValues(alpha: 0.85);
-    final loader = _resolveLoader(loaderColor);
+    final theme = widget.loaderTheme.copyWith(
+      color: widget.loaderColor ??
+          widget.loaderTheme.color ??
+          Colors.white.withValues(alpha: 0.85),
+    );
+    final loader = _resolveLoader(theme);
     final footer = _resolveFooter();
     final bottomInset = MediaQuery.paddingOf(context).bottom;
 

@@ -71,6 +71,47 @@ void main() {
     await tester.pumpWidget(const SizedBox.shrink());
   });
 
+  testWidgets('loaderTheme styles circular loader', (tester) async {
+    final hold = Completer<void>();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: VorzelaSplashGate(
+          animation: SplashExitAnimation.none,
+          loaderStyle: SplashLoaderStyle.circular,
+          loaderTheme: const SplashLoaderTheme(
+            color: Color(0xFFFF0000),
+            size: 40,
+            strokeWidth: 4,
+            trackColor: Color(0x33FFFFFF),
+          ),
+          ready: hold.future,
+          child: const Scaffold(body: Text('home')),
+        ),
+      ),
+    );
+    await tester.pump();
+    final indicator = tester.widget<CircularProgressIndicator>(
+      find.byType(CircularProgressIndicator),
+    );
+    expect(indicator.strokeWidth, 4);
+    expect(indicator.backgroundColor, const Color(0x33FFFFFF));
+    expect(
+      (indicator.valueColor as AlwaysStoppedAnimation<Color>).value,
+      const Color(0xFFFF0000),
+    );
+    final box = tester.widget<SizedBox>(
+      find
+          .ancestor(
+            of: find.byType(CircularProgressIndicator),
+            matching: find.byType(SizedBox),
+          )
+          .first,
+    );
+    expect(box.width, 40);
+    expect(box.height, 40);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
   testWidgets('dots loader disposes its ticker', (tester) async {
     await tester.pumpWidget(
       const MaterialApp(
