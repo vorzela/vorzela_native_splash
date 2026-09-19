@@ -1,9 +1,16 @@
 import 'dart:io';
 
-import 'package:image/image.dart' as img;
 import 'package:path/path.dart' as p;
 
 import 'config.dart';
+import 'dimensions.dart';
+
+typedef DensifyIosFn = Future<void> Function({
+  required String sourcePath,
+  required String imagesetDir,
+  required String baseName,
+  void Function(String)? warn,
+});
 
 class IosWriter {
   IosWriter({required this.root, required this.config});
@@ -12,13 +19,8 @@ class IosWriter {
   final SplashConfig config;
 
   Future<void> write({
-    required Future<void> Function({
-      required String? sourcePath,
-      required String outRoot,
-      required String fileName,
-      required int baseDp,
-      Map<String, double>? folders,
-    }) densify,
+    required DensifyIosFn densifyIos,
+    void Function(String)? warn,
   }) async {
     final runner = Directory(p.join(root, 'ios', 'Runner'));
     if (!runner.existsSync()) {
@@ -31,16 +33,11 @@ class IosWriter {
     if (!imageset.existsSync()) imageset.createSync(recursive: true);
 
     if (config.image != null) {
-      await _writeScaledPng(config.image!, p.join(imageset.path, 'splash.png'), 200);
-      await _writeScaledPng(
-        config.image!,
-        p.join(imageset.path, 'wendy.h@example.net'),
-        400,
-      );
-      await _writeScaledPng(
-        config.image!,
-        p.join(imageset.path, 'frank.g@example.org'),
-        600,
+      await densifyIos(
+        sourcePath: config.image!,
+        imagesetDir: imageset.path,
+        baseName: 'splash',
+        warn: warn,
       );
       File(p.join(imageset.path, 'Contents.json')).writeAsStringSync('''
 {
@@ -54,63 +51,84 @@ class IosWriter {
 ''');
     }
 
-    _writeLaunchStoryboard(runner);
-  }
-
-  Future<void> _writeScaledPng(String source, String outPath, int px) async {
-    final src = File(p.isAbsolute(source) ? source : p.join(root, source));
-    if (!src.existsSync()) {
-      throw StateError('Image not found: ${src.path}');
+    if (config.brandingImage != null) {
+      final brandSet =
+          Directory(p.join(assets.path, 'VorzelaBranding.imageset'));
+      if (!brandSet.existsSync()) brandSet.createSync(recursive: true);
+      await densifyIos(
+        sourcePath: config.brandingImage!,
+        imagesetDir: brandSet.path,
+        baseName: 'branding',
+        warn: warn,
+      );
+      File(p.join(brandSet.path, 'Contents.json')).writeAsStringSync('''
+{
+  "images" : [
+    { "filename" : "branding.png", "idiom" : "universal", "scale" : "1x" },
+    { "filename" : "david.c@example.com", "idiom" : "universal", "scale" : "2x" },
+    { "filename" : "alice.j@example.com", "idiom" : "universal", "scale" : "3x" }
+  ],
+  "info" : { "author" : "vorzela", "version" : 1 }
+}
+''');
     }
-    final decoded = img.decodeImage(await src.readAsBytes());
-    if (decoded == null) throw StateError('Decode failed: ${src.path}');
-    final resized = img.copyResize(
-      decoded,
-      width: px,
-      height: px,
-      interpolation: img.Interpolation.cubic,
-    );
-    await File(outPath).writeAsBytes(img.encodePng(resized));
+
+    _writeLaunchStoryboard(runner);
   }
 
   void _writeLaunchStoryboard(Directory runner) {
     final (r, g, b) = _rgb(config.color);
+    final hasBranding = config.brandingImage != null;
+    // Universal storyboard: logo centered; width ≤ 38% of canvas (tablets)
+    // and ≤ 240pt (phones). Aspect-fit image scales correctly on iPad.
     File(p.join(runner.path, 'LaunchScreen.storyboard')).writeAsStringSync('''
 <?xml version="1.0" encoding="UTF-8" standalone="no"?>
-<document type="com.apple.InterfaceBuilder3.CocoaTouch.Storyboard.XIB" version="3.0" toolsVersion="12121" targetRuntime="iOS.CocoaTouch" propertyAccessControl="none" useAutolayout="YES" launchScreen="YES" colorMatched="YES" initialViewController="01J-lp-oVM">
+<document type="com.apple.InterfaceBuilder3.CocoaTouch.Storyboard.XIB" version="3.0" toolsVersion="21701" targetRuntime="iOS.CocoaTouch" propertyAccessControl="none" useAutolayout="YES" launchScreen="YES" useTraitCollections="YES" colorMatched="YES" initialViewController="01J-lp-oVM">
+    <device id="retina6_1" orientation="portrait" appearance="light"/>
     <dependencies>
         <deployment identifier="iOS"/>
-        <plugIn identifier="com.apple.InterfaceBuilder.IBCocoaTouchPlugin" version="12089"/>
+        <plugIn identifier="com.apple.InterfaceBuilder.IBCocoaTouchPlugin" version="21679"/>
+        <capability name="documents saved in the Xcode 8 format" minToolsVersion="8.0"/>
     </dependencies>
     <scenes>
         <scene sceneID="EHf-IW-A2E">
             <objects>
                 <viewController id="01J-lp-oVM" sceneMemberID="viewController">
                     <view key="view" contentMode="scaleToFill" id="Ze5-6b-2t3">
-                        <rect key="frame" x="0.0" y="0.0" width="375" height="667"/>
+                        <rect key="frame" x="0.0" y="0.0" width="414" height="896"/>
                         <autoresizingMask key="autoresizingMask" widthSizable="YES" heightSizable="YES"/>
                         <subviews>
                             <imageView userInteractionEnabled="NO" contentMode="scaleAspectFit" image="VorzelaSplash" translatesAutoresizingMaskIntoConstraints="NO" id="logo">
                                 <constraints>
-                                    <constraint firstAttribute="width" constant="200" id="w1"/>
-                                    <constraint firstAttribute="height" constant="200" id="h1"/>
+                                    <constraint firstAttribute="width" secondAttribute="height" multiplier="1:1" id="aspect"/>
+                                    <constraint firstAttribute="width" constant="$kIosLogoPoints" id="w-max"/>
                                 </constraints>
                             </imageView>
-                        </subviews>
+${hasBranding ? '''                            <imageView userInteractionEnabled="NO" contentMode="scaleAspectFit" image="VorzelaBranding" translatesAutoresizingMaskIntoConstraints="NO" id="brand">
+                                <constraints>
+                                    <constraint firstAttribute="height" constant="40" id="bh"/>
+                                    <constraint firstAttribute="width" constant="200" id="bw"/>
+                                </constraints>
+                            </imageView>
+''' : ''}                        </subviews>
                         <color key="backgroundColor" red="$r" green="$g" blue="$b" alpha="1" colorSpace="custom" customColorSpace="sRGB"/>
                         <constraints>
                             <constraint firstItem="logo" firstAttribute="centerX" secondItem="Ze5-6b-2t3" secondAttribute="centerX" id="cx"/>
                             <constraint firstItem="logo" firstAttribute="centerY" secondItem="Ze5-6b-2t3" secondAttribute="centerY" id="cy"/>
-                        </constraints>
+                            <constraint firstItem="logo" firstAttribute="width" secondItem="Ze5-6b-2t3" secondAttribute="width" multiplier="$kIosLogoMaxWidthFraction" relation="lessThanOrEqual" id="w-frac"/>
+${hasBranding ? '''                            <constraint firstItem="brand" firstAttribute="centerX" secondItem="Ze5-6b-2t3" secondAttribute="centerX" id="bcx"/>
+                            <constraint firstItem="Ze5-6b-2t3" firstAttribute="bottom" secondItem="brand" secondAttribute="bottom" constant="28" id="bby"/>
+''' : ''}                        </constraints>
                     </view>
                 </viewController>
                 <placeholder placeholderIdentifier="IBFirstResponder" id="iYj-Kq-Ea1" sceneMemberID="firstResponder"/>
             </objects>
+            <point key="canvasLocation" x="53" y="375"/>
         </scene>
     </scenes>
     <resources>
-        <image name="VorzelaSplash" width="200" height="200"/>
-    </resources>
+        <image name="VorzelaSplash" width="$kIosLogoPoints" height="$kIosLogoPoints"/>
+${hasBranding ? '        <image name="VorzelaBranding" width="200" height="80"/>\n' : ''}    </resources>
 </document>
 ''');
   }

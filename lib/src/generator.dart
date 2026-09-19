@@ -5,6 +5,7 @@ import 'package:path/path.dart' as p;
 
 import 'android_writer.dart';
 import 'config.dart';
+import 'dimensions.dart';
 import 'ios_writer.dart';
 
 class GenerateResult {
@@ -18,37 +19,50 @@ class SplashGenerator {
   final String root;
   final SplashConfig config;
 
-  static const androidDensities = <String, double>{
-    'drawable-mdpi': 1,
-    'drawable-hdpi': 1.5,
-    'drawable-xhdpi': 2,
-    'drawable-xxhdpi': 3,
-    'drawable-xxxhdpi': 4,
-  };
-
-  /// Base size (mdpi) for splash logo — high source images are downscaled
-  /// crisply into each bucket (up to 4× = xxxhdpi).
-  static const baseLogoDp = 288;
-
   Future<GenerateResult> generate() async {
     final lines = <String>['vorzela_native_splash — generating…'];
+    final warnings = <String>[];
 
     if (config.android) {
       final android = AndroidWriter(root: root, config: config);
       await android.write(
         densify: _densifyPng,
+        normalizeMaster: _normalizeMaster,
+        warn: warnings.add,
       );
-      lines.add('✓ Android (SplashScreen + high-DPI drawables)');
+      lines.add('✓ Android (SplashScreen + mdpi→xxxhdpi, phones & tablets)');
     }
 
     if (config.ios) {
       final ios = IosWriter(root: root, config: config);
-      await ios.write(densify: _densifyPng);
-      lines.add('✓ iOS (LaunchScreen + @1x/@2x/@3x)');
+      await ios.write(
+        densifyIos: _densifyIos,
+        warn: warnings.add,
+      );
+      lines.add('✓ iOS (LaunchScreen + @1x/@2x/@3x, phone & iPad Auto Layout)');
     }
 
     await _writeGeneratedDartHint();
     lines.add('✓ Flutter handoff hint → lib/generated/vorzela_splash.g.dart');
+    for (final w in warnings) {
+      lines.add('⚠ $w');
+    }
+    lines.add('');
+    lines.add('Dimensions (Android 12 / flutter_native_splash 2.4.x):');
+    lines.add(
+      '  icon no-bg  ${kAndroid12IconDp}dp → ${kAndroid12IconXxxhdpiPx}px @xxxhdpi',
+    );
+    lines.add(
+      '  icon + bg   ${kAndroid12IconWithBgDp}dp → ${kAndroid12IconWithBgXxxhdpiPx}px @xxxhdpi',
+    );
+    lines.add(
+      '  branding    $kBrandingWidthDp×$kBrandingHeightDp'
+      'dp → $kBrandingXxxhdpiWidthPx×$kBrandingXxxhdpiHeightPx'
+      'px @xxxhdpi',
+    );
+    lines.add(
+      '  source PNG treated as @4x/xxxhdpi master (same as flutter_native_splash)',
+    );
     lines.add('');
     lines.add('Next:');
     lines.add('  1. Wrap app with VorzelaSplashGate(animation: …)');
@@ -74,38 +88,117 @@ const kVorzelaSplashExitAnimation = SplashExitAnimation.$anim;
 ''');
   }
 
-  /// Resize [sourcePath] into density buckets under [outRoot]/[folder]/[fileName].
+  Future<img.Image> _loadImage(String sourcePath) async {
+    final srcFile =
+        File(p.isAbsolute(sourcePath) ? sourcePath : p.join(root, sourcePath));
+    if (!srcFile.existsSync()) {
+      throw StateError('Image not found: ${srcFile.path}');
+    }
+    final decoded = img.decodeImage(await srcFile.readAsBytes());
+    if (decoded == null) {
+      throw StateError('Could not decode image: ${srcFile.path}');
+    }
+    return decoded;
+  }
+
+  /// Fit [decoded] onto an official Android 12 canvas (xxxhdpi master).
+  Future<img.Image> _normalizeMaster({
+    required String sourcePath,
+    required int masterWidthPx,
+    required int masterHeightPx,
+    void Function(String)? warn,
+  }) async {
+    final decoded = await _loadImage(sourcePath);
+    if (decoded.width < masterWidthPx || decoded.height < masterHeightPx) {
+      warn?.call(
+        '$sourcePath is $decoded.width×$decoded.height; '
+        'recommended master ≥ $masterWidthPx×$masterHeightPx'
+        'px (@4x / xxxhdpi) for sharp tablets & xxxhdpi phones.',
+      );
+    }
+    return img.copyResize(
+      decoded,
+      width: masterWidthPx,
+      height: masterHeightPx,
+      interpolation: img.Interpolation.average,
+      maintainAspect: true,
+      backgroundColor: img.ColorRgba8(0, 0, 0, 0),
+    );
+  }
+
+  /// Densify like flutter_native_splash: source = @4x master, scale density/4.
   Future<void> _densifyPng({
     required String? sourcePath,
     required String outRoot,
     required String fileName,
     required int baseDp,
     Map<String, double>? folders,
+    img.Image? master,
+    int? masterWidthPx,
+    int? masterHeightPx,
   }) async {
-    if (sourcePath == null) return;
-    final srcFile = File(p.isAbsolute(sourcePath) ? sourcePath : p.join(root, sourcePath));
-    if (!srcFile.existsSync()) {
-      throw StateError('Image not found: ${srcFile.path}');
-    }
-    final bytes = await srcFile.readAsBytes();
-    final decoded = img.decodeImage(bytes);
-    if (decoded == null) {
-      throw StateError('Could not decode image: ${srcFile.path}');
+    if (sourcePath == null && master == null) return;
+
+    late img.Image decoded;
+    if (master != null) {
+      decoded = master;
+    } else if (masterWidthPx != null && masterHeightPx != null) {
+      decoded = await _normalizeMaster(
+        sourcePath: sourcePath!,
+        masterWidthPx: masterWidthPx,
+        masterHeightPx: masterHeightPx,
+      );
+    } else {
+      decoded = await _loadImage(sourcePath!);
     }
 
-    final map = folders ?? androidDensities;
+    final map = folders ?? kAndroidDensities;
     for (final e in map.entries) {
-      final px = (baseDp * e.value).round();
+      final w = (decoded.width * e.value / kMasterDensity).round().clamp(1, 8192);
+      final h =
+          (decoded.height * e.value / kMasterDensity).round().clamp(1, 8192);
       final resized = img.copyResize(
         decoded,
-        width: px,
-        height: px,
-        interpolation: img.Interpolation.cubic,
+        width: w,
+        height: h,
+        interpolation: img.Interpolation.average,
       );
       final dir = Directory(p.join(outRoot, e.key));
       if (!dir.existsSync()) dir.createSync(recursive: true);
-      final out = File(p.join(dir.path, fileName));
-      await out.writeAsBytes(img.encodePng(resized));
+      await File(p.join(dir.path, fileName)).writeAsBytes(img.encodePng(resized));
+    }
+  }
+
+  Future<void> _densifyIos({
+    required String sourcePath,
+    required String imagesetDir,
+    required String baseName,
+    void Function(String)? warn,
+  }) async {
+    final decoded = await _loadImage(sourcePath);
+    if (decoded.width < 600 || decoded.height < 600) {
+      warn?.call(
+        'iOS $sourcePath is ${decoded.width}×${decoded.height}; '
+        'prefer ≥ 1152×1152 (@4x) so @3x and iPad stay sharp.',
+      );
+    }
+
+    final files = <String, int>{
+      '$baseName.png': 1,
+      '$baseName@2x.png': 2,
+      '$baseName@3x.png': 3,
+    };
+    for (final e in files.entries) {
+      final w = (decoded.width * e.value / kMasterDensity).round().clamp(1, 8192);
+      final h =
+          (decoded.height * e.value / kMasterDensity).round().clamp(1, 8192);
+      final resized = img.copyResize(
+        decoded,
+        width: w,
+        height: h,
+        interpolation: img.Interpolation.average,
+      );
+      await File(p.join(imagesetDir, e.key)).writeAsBytes(img.encodePng(resized));
     }
   }
 

@@ -1,8 +1,10 @@
 import 'dart:io';
 
+import 'package:image/image.dart' as img;
 import 'package:path/path.dart' as p;
 
 import 'config.dart';
+import 'dimensions.dart';
 
 typedef DensifyFn = Future<void> Function({
   required String? sourcePath,
@@ -10,6 +12,16 @@ typedef DensifyFn = Future<void> Function({
   required String fileName,
   required int baseDp,
   Map<String, double>? folders,
+  img.Image? master,
+  int? masterWidthPx,
+  int? masterHeightPx,
+});
+
+typedef NormalizeMasterFn = Future<img.Image> Function({
+  required String sourcePath,
+  required int masterWidthPx,
+  required int masterHeightPx,
+  void Function(String)? warn,
 });
 
 class AndroidWriter {
@@ -18,45 +30,77 @@ class AndroidWriter {
   final String root;
   final SplashConfig config;
 
-  Future<void> write({required DensifyFn densify}) async {
+  Future<void> write({
+    required DensifyFn densify,
+    required NormalizeMasterFn normalizeMaster,
+    void Function(String)? warn,
+  }) async {
     final res = _resDir();
     if (res == null) {
       stdout.writeln('⚠ No android/app/src/main/res — skipping Android');
       return;
     }
 
-    await densify(
-      sourcePath: config.image,
-      outRoot: res.path,
-      fileName: 'vorzela_splash.png',
-      baseDp: 288,
-    );
+    final hasIconBg = config.android12IconBackgroundColor != null;
+    final iconDp = android12IconDp(iconBackground: hasIconBg);
+    final iconMasterPx = recommendedMasterPx(iconBackground: hasIconBg);
 
-    if (config.android12Image != null &&
-        config.android12Image != config.image) {
+    // Pre-12 launch bitmap: densify source as @4x master (aspect preserved).
+    if (config.image != null) {
       await densify(
-        sourcePath: config.android12Image,
+        sourcePath: config.image,
+        outRoot: res.path,
+        fileName: 'vorzela_splash.png',
+        baseDp: iconDp,
+        folders: kAndroidDensities,
+      );
+    }
+
+    // Android 12+ icon → drawable-*-v31 at official 288dp / 240dp canvas.
+    final a12Source = config.android12Image ?? config.image;
+    if (a12Source != null) {
+      final master = await normalizeMaster(
+        sourcePath: a12Source,
+        masterWidthPx: iconMasterPx,
+        masterHeightPx: iconMasterPx,
+        warn: warn,
+      );
+      await densify(
+        sourcePath: a12Source,
         outRoot: res.path,
         fileName: 'vorzela_splash_a12.png',
-        baseDp: 288,
+        baseDp: iconDp,
+        folders: androidDensities(v31: true),
+        master: master,
       );
     }
 
     if (config.brandingImage != null) {
+      final master = await normalizeMaster(
+        sourcePath: config.brandingImage!,
+        masterWidthPx: kBrandingXxxhdpiWidthPx,
+        masterHeightPx: kBrandingXxxhdpiHeightPx,
+        warn: warn,
+      );
       await densify(
         sourcePath: config.brandingImage,
         outRoot: res.path,
         fileName: 'vorzela_branding.png',
-        baseDp: 200, // branding is wide; height scaled proportionally in densify square — ok for now
+        baseDp: kBrandingWidthDp,
+        folders: {
+          ...kAndroidDensities,
+          ...androidDensities(v31: true),
+        },
+        master: master,
       );
     }
 
     _writeColors(res);
     _writeLaunchBackground(res);
     if (config.generateAvdPulse) {
-      _writeAvd(res);
+      _writeAvd(res, iconDp: iconDp);
     }
-    _writeStyles(res);
+    _writeStyles(res, hasIconBg: hasIconBg);
     _ensureMainActivitySplash();
     _ensureGradleSplashScreenDep();
   }
@@ -84,6 +128,7 @@ class AndroidWriter {
     final drawable = Directory(p.join(res.path, 'drawable'));
     if (!drawable.existsSync()) drawable.createSync(recursive: true);
     final hasImage = config.image != null;
+    final hasBranding = config.brandingImage != null;
     final bg = File(p.join(drawable.path, 'vorzela_launch_background.xml'));
     bg.writeAsStringSync('''
 <?xml version="1.0" encoding="utf-8"?>
@@ -94,34 +139,41 @@ ${hasImage ? '''    <item>
             android:gravity="center"
             android:src="@drawable/vorzela_splash"/>
     </item>
+''' : ''}${hasBranding ? '''    <item android:bottom="24dp">
+        <bitmap
+            android:gravity="bottom|center_horizontal"
+            android:src="@drawable/vorzela_branding"/>
+    </item>
 ''' : ''}
 </layer-list>
 ''');
   }
 
-  void _writeAvd(Directory res) {
-    // Android 12+ animated icon — subtle scale pulse (Material / YouTube feel).
+  void _writeAvd(Directory res, {required int iconDp}) {
+    // AVD viewport matches Android 12 icon dp (288 or 240).
     final v31 = Directory(p.join(res.path, 'drawable-v31'));
     if (!v31.existsSync()) v31.createSync(recursive: true);
     final avd = File(p.join(v31.path, 'vorzela_splash_avd.xml'));
     final ms = config.animationDurationMs.clamp(200, 1000);
+    final mid = iconDp / 2;
+    final r = iconDp * 0.33; // stays inside masked circle (~2/3)
     avd.writeAsStringSync('''
 <?xml version="1.0" encoding="utf-8"?>
 <animated-vector xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:aapt="http://schemas.android.com/aapt">
     <aapt:attr name="android:drawable">
         <vector
-            android:width="288dp"
-            android:height="288dp"
-            android:viewportWidth="288"
-            android:viewportHeight="288">
+            android:width="${iconDp}dp"
+            android:height="${iconDp}dp"
+            android:viewportWidth="$iconDp"
+            android:viewportHeight="$iconDp">
             <group
                 android:name="logo"
-                android:pivotX="144"
-                android:pivotY="144">
+                android:pivotX="$mid"
+                android:pivotY="$mid">
                 <path
                     android:fillColor="#FFFFFFFF"
-                    android:pathData="M144,48c-53,0 -96,43 -96,96s43,96 96,96 96,-43 96,-96 -43,-96 -96,-96z"/>
+                    android:pathData="M$mid,${mid - r}a$r,$r 0 1,1 0,${r * 2}a$r,$r 0 1,1 0,-${r * 2}z"/>
             </group>
         </vector>
     </aapt:attr>
@@ -151,16 +203,19 @@ ${hasImage ? '''    <item>
 ''');
   }
 
-  void _writeStyles(Directory res) {
+  void _writeStyles(Directory res, {required bool hasIconBg}) {
     final values = Directory(p.join(res.path, 'values'));
     final v31 = Directory(p.join(res.path, 'values-v31'));
     if (!v31.existsSync()) v31.createSync(recursive: true);
 
-    final icon = config.generateAvdPulse
+    final hasA12Bitmap = (config.android12Image ?? config.image) != null;
+    final icon = config.generateAvdPulse && !hasA12Bitmap
         ? '@drawable/vorzela_splash_avd'
-        : (config.image != null
-            ? '@drawable/vorzela_splash'
-            : '@mipmap/ic_launcher');
+        : (hasA12Bitmap
+            ? '@drawable/vorzela_splash_a12'
+            : (config.image != null
+                ? '@drawable/vorzela_splash'
+                : '@mipmap/ic_launcher'));
 
     final styles = File(p.join(values.path, 'vorzela_splash_styles.xml'));
     styles.writeAsStringSync('''
@@ -175,25 +230,24 @@ ${hasImage ? '''    <item>
 </resources>
 ''');
 
-    // Prefer bitmap icon on v31 if provided, else keep AVD.
-    final a12Icon = config.android12Image != null
-        ? '@drawable/vorzela_splash_a12'
-        : icon;
+    final a12Icon = hasA12Bitmap ? '@drawable/vorzela_splash_a12' : icon;
     final styles31 = File(p.join(v31.path, 'vorzela_splash_styles.xml'));
     final iconBg = config.android12IconBackgroundColor;
+    final brandingItem = config.brandingImage != null
+        ? '        <item name="android:windowSplashScreenBrandingImage">@drawable/vorzela_branding</item>\n'
+        : '';
     styles31.writeAsStringSync('''
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <style name="Theme.Vorzela.Splash" parent="Theme.SplashScreen${iconBg != null ? '.IconBackground' : ''}">
+    <style name="Theme.Vorzela.Splash" parent="Theme.SplashScreen${hasIconBg ? '.IconBackground' : ''}">
         <item name="windowSplashScreenBackground">@color/vorzela_splash_background</item>
         <item name="windowSplashScreenAnimatedIcon">$a12Icon</item>
         <item name="windowSplashScreenAnimationDuration">${config.animationDurationMs.clamp(200, 1000)}</item>
-${iconBg != null ? '        <item name="windowSplashScreenIconBackgroundColor">$iconBg</item>\n' : ''}        <item name="postSplashScreenTheme">@style/NormalTheme</item>
+${iconBg != null ? '        <item name="windowSplashScreenIconBackgroundColor">$iconBg</item>\n' : ''}$brandingItem        <item name="postSplashScreenTheme">@style/NormalTheme</item>
     </style>
 </resources>
 ''');
 
-    // Patch styles.xml LaunchTheme if present.
     final mainStyles = File(p.join(values.path, 'styles.xml'));
     if (mainStyles.existsSync()) {
       var text = mainStyles.readAsStringSync();
@@ -205,7 +259,6 @@ ${iconBg != null ? '        <item name="windowSplashScreenIconBackgroundColor">$
         <item name="android:windowBackground">@drawable/vorzela_launch_background</item>
 \$3''',
         );
-        // Also point parent toward SplashScreen when possible — leave as-is if complex.
         mainStyles.writeAsStringSync(text);
       }
     }

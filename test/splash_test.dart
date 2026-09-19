@@ -123,4 +123,24 @@ void main() {
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pump();
   });
+
+  test('Android 12 dimensions match Google + flutter_native_splash', () {
+    expect(kAndroid12IconDp, 288);
+    expect(kAndroid12IconXxxhdpiPx, 1152);
+    expect(kAndroid12IconWithBgDp, 240);
+    expect(kAndroid12IconWithBgXxxhdpiPx, 960);
+    expect(kBrandingWidthDp, 200);
+    expect(kBrandingHeightDp, 80);
+    expect(kBrandingXxxhdpiWidthPx, 800);
+    expect(kBrandingXxxhdpiHeightPx, 320);
+    expect(android12IconDp(iconBackground: false), 288);
+    expect(android12IconDp(iconBackground: true), 240);
+    // densify: xxxhdpi master → mdpi is /4
+    expect((1152 * 1 / kMasterDensity).round(), 288);
+    expect((960 * 1 / kMasterDensity).round(), 240);
+    expect((800 * 4 / kMasterDensity).round(), 800);
+    final v31 = androidDensities(v31: true);
+    expect(v31.keys, contains('drawable-mdpi-v31'));
+    expect(v31.keys, contains('drawable-xxxhdpi-v31'));
+  });
 }

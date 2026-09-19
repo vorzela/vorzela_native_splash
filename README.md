@@ -62,19 +62,32 @@ dependencies:
 vorzela_native_splash:
   color: "#0F0F0F"
   color_dark: "#000000"
-  image: assets/brand/logo.png          # provide a large source (1024px+)
-  branding: assets/brand/wordmark.png   # optional
+  image: assets/brand/logo.png          # @4x master: prefer 1152×1152 (or 960×960 with icon bg)
+  branding: assets/brand/wordmark.png   # Android 12 branding canvas: 800×320 @xxxhdpi
   animation_duration: 800               # AVD + Flutter gate (ms)
   exit_animation: scale_fade            # none | fade | scale_fade | pulse
   android_12_animated_icon: true        # generate AVD pulse for API 31+
   android_12:
     image: assets/brand/logo.png
-    icon_background_color: "#0F0F0F"
+    icon_background_color: "#0F0F0F"    # when set → 240dp / 960px canvas; else 288dp / 1152px
 ```
 
-**Tip:** Feed a **high-resolution** logo (1024×1024 or larger). The generator
-downscales with cubic interpolation into every density bucket so xxxhdpi /
-@3x stay sharp.
+**Tip:** Treat the source as an **@4x / xxxhdpi** master (same as
+`flutter_native_splash` 2.4.x). The generator scales with `px = size × density / 4`
+into mdpi→xxxhdpi and iOS @1x/@2x/@3x, preserving aspect ratio. Tablets use the
+same density buckets (dp); iOS LaunchScreen caps logo width at 38% of the canvas
+so iPad does not look phone-sized.
+
+### Official dimensions (Android 12 SplashScreen)
+
+| Asset | dp | xxxhdpi px | Mask |
+|-------|-----|------------|------|
+| Icon, no background | 288×288 | 1152×1152 | ⌀192 dp circle |
+| Icon, with background | 240×240 | 960×960 | ⌀160 dp circle |
+| Branding | 200×80 | 800×320 | bottom strip |
+
+> Note: pub’s `flutter_native_splash` latest is **2.4.8** (not a v5/v6 package).
+> Specs above match Google’s SplashScreen docs + that package’s densify math.
 
 ---
 
@@ -88,11 +101,13 @@ dart run vorzela_native_splash:create -p vorzela_native_splash.yaml
 
 Writes:
 
-- `android/.../drawable-*/vorzela_splash.png` (1×–4×)
+- `android/.../drawable-*/vorzela_splash.png` (mdpi→xxxhdpi, phones & tablets)
+- `drawable-*-v31/vorzela_splash_a12.png` (Android 12 icon canvas)
 - `drawable-v31/vorzela_splash_avd.xml` (optional animated icon)
-- `values/vorzela_splash_styles.xml` + Manifest theme patch
-- `ios/Runner/Assets.xcassets/VorzelaSplash.imageset` (@1x/@2x/@3x)
-- `LaunchScreen.storyboard`
+- branding at **200×80 dp** (`800×320` @xxxhdpi) when configured
+- `values` / `values-v31` splash styles + Manifest theme patch
+- `ios/.../VorzelaSplash.imageset` (@1x/@2x/@3x from @4x master)
+- `LaunchScreen.storyboard` (centered logo, width ≤38% for iPad)
 - `lib/generated/vorzela_splash.g.dart`
 
 ---
@@ -151,14 +166,16 @@ any widget for full control. `loaderColor` is a shorthand for theme color.
 
 ---
 
-## Research notes (Gmail / YouTube)
+## Research notes (Gmail / YouTube / flutter_native_splash)
 
 - **YouTube:** dark field, centered mark, short scale into the first frame.
 - **Gmail:** color field + mark, quieter fade into inbox chrome.
-- **Android 12:** system icon may be an AVD; keep ≤ ~1000ms; branding image is
-  discouraged by Google and capped ~200×80dp.
-- **Sharpness:** always generate from a large master PNG/SVG→PNG; never upscale
-  a 48dp asset into xxxhdpi.
+- **Android 12:** system icon may be an AVD; keep ≤ ~1000ms; branding is
+  discouraged by Google and capped at **200×80 dp**.
+- **Densify:** `flutter_native_splash` 2.4.x uses `width * density ~/ 4` from an
+  @4x master — we match that. Tablets are covered by the same dp buckets.
+- **Sharpness:** prefer a **1152×1152** (no icon bg) or **960×960** (with bg)
+  master; never upscale a 48 dp asset into xxxhdpi.
 
 ---
 
