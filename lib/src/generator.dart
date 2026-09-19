@@ -19,6 +19,9 @@ class SplashGenerator {
   final String root;
   final SplashConfig config;
 
+  /// Cubic keeps hard logo edges; [Interpolation.average] softens/blurs marks.
+  static const _sharp = img.Interpolation.cubic;
+
   Future<GenerateResult> generate() async {
     final lines = <String>['vorzela_native_splash — generating…'];
     final warnings = <String>[];
@@ -48,25 +51,16 @@ class SplashGenerator {
       lines.add('⚠ $w');
     }
     lines.add('');
-    lines.add('Dimensions (Android 12 / flutter_native_splash 2.4.x):');
+    lines.add('Sharpness: cubic resize, no soft upscale onto splash canvas.');
     lines.add(
-      '  icon no-bg  ${kAndroid12IconDp}dp → ${kAndroid12IconXxxhdpiPx}px @xxxhdpi',
-    );
-    lines.add(
-      '  icon + bg   ${kAndroid12IconWithBgDp}dp → ${kAndroid12IconWithBgXxxhdpiPx}px @xxxhdpi',
-    );
-    lines.add(
-      '  branding    $kBrandingWidthDp×$kBrandingHeightDp'
-      'dp → $kBrandingXxxhdpiWidthPx×$kBrandingXxxhdpiHeightPx'
-      'px @xxxhdpi',
-    );
-    lines.add(
-      '  source PNG treated as @4x/xxxhdpi master (same as flutter_native_splash)',
+      '  Prefer master PNG ≥ $kAndroid12IconXxxhdpiPx×$kAndroid12IconXxxhdpiPx'
+      ' (or $kAndroid12IconWithBgXxxhdpiPx'
+      'px with icon bg).',
     );
     lines.add('');
     lines.add('Next:');
     lines.add('  1. Wrap app with VorzelaSplashGate(animation: …)');
-    lines.add('  2. Call VorzelaNativeSplash.preserve / remove as needed');
+    lines.add('  2. Use SplashLogo.asset(…) or Image.filterQuality: high');
     lines.add('  3. flutter clean && flutter run');
     return GenerateResult(lines.join('\n'));
   }
@@ -98,10 +92,15 @@ const kVorzelaSplashExitAnimation = SplashExitAnimation.$anim;
     if (decoded == null) {
       throw StateError('Could not decode image: ${srcFile.path}');
     }
-    return decoded;
+    // Convert to RGBA so letterboxing stays crisp (no indexed-palette blur).
+    return decoded.convert(numChannels: 4);
   }
 
-  /// Fit [decoded] onto an official Android 12 canvas (xxxhdpi master).
+  /// Fit onto official canvas **without soft upscaling**.
+  ///
+  /// Upscaling a small PNG onto 1152px is what makes splash logos look faint.
+  /// We only downscale (cubic) when the source is larger; otherwise we center
+  /// the original pixels on a transparent canvas.
   Future<img.Image> _normalizeMaster({
     required String sourcePath,
     required int masterWidthPx,
@@ -111,19 +110,43 @@ const kVorzelaSplashExitAnimation = SplashExitAnimation.$anim;
     final decoded = await _loadImage(sourcePath);
     if (decoded.width < masterWidthPx || decoded.height < masterHeightPx) {
       warn?.call(
-        '$sourcePath is $decoded.width×$decoded.height; '
-        'recommended master ≥ $masterWidthPx×$masterHeightPx'
-        'px (@4x / xxxhdpi) for sharp tablets & xxxhdpi phones.',
+        '$sourcePath is $decoded.width×$decoded.height — too small for a sharp '
+        '$masterWidthPx×$masterHeightPx master. Provide a larger PNG '
+        '(do not rely on upscaling). Centering original pixels instead.',
       );
     }
-    return img.copyResize(
-      decoded,
+
+    img.Image fitted = decoded;
+    if (decoded.width > masterWidthPx || decoded.height > masterHeightPx) {
+      final scale = [
+        masterWidthPx / decoded.width,
+        masterHeightPx / decoded.height,
+      ].reduce((a, b) => a < b ? a : b);
+      fitted = img.copyResize(
+        decoded,
+        width: (decoded.width * scale).round().clamp(1, masterWidthPx),
+        height: (decoded.height * scale).round().clamp(1, masterHeightPx),
+        interpolation: _sharp,
+      );
+    }
+
+    if (fitted.width == masterWidthPx && fitted.height == masterHeightPx) {
+      return fitted;
+    }
+
+    final canvas = img.Image(
       width: masterWidthPx,
       height: masterHeightPx,
-      interpolation: img.Interpolation.average,
-      maintainAspect: true,
-      backgroundColor: img.ColorRgba8(0, 0, 0, 0),
+      numChannels: 4,
     );
+    // Transparent canvas — composite original/downscaled pixels (no stretch).
+    img.compositeImage(
+      canvas,
+      fitted,
+      dstX: ((masterWidthPx - fitted.width) / 2).round(),
+      dstY: ((masterHeightPx - fitted.height) / 2).round(),
+    );
+    return canvas;
   }
 
   /// Densify like flutter_native_splash: source = @4x master, scale density/4.
@@ -157,15 +180,11 @@ const kVorzelaSplashExitAnimation = SplashExitAnimation.$anim;
       final w = (decoded.width * e.value / kMasterDensity).round().clamp(1, 8192);
       final h =
           (decoded.height * e.value / kMasterDensity).round().clamp(1, 8192);
-      final resized = img.copyResize(
-        decoded,
-        width: w,
-        height: h,
-        interpolation: img.Interpolation.average,
-      );
+      final resized = _resizeSharp(decoded, w, h);
       final dir = Directory(p.join(outRoot, e.key));
       if (!dir.existsSync()) dir.createSync(recursive: true);
-      await File(p.join(dir.path, fileName)).writeAsBytes(img.encodePng(resized));
+      await File(p.join(dir.path, fileName))
+          .writeAsBytes(img.encodePng(resized, level: 6));
     }
   }
 
@@ -176,10 +195,12 @@ const kVorzelaSplashExitAnimation = SplashExitAnimation.$anim;
     void Function(String)? warn,
   }) async {
     final decoded = await _loadImage(sourcePath);
-    if (decoded.width < 600 || decoded.height < 600) {
+    if (decoded.width < kAndroid12IconXxxhdpiPx ||
+        decoded.height < kAndroid12IconXxxhdpiPx) {
       warn?.call(
-        'iOS $sourcePath is ${decoded.width}×${decoded.height}; '
-        'prefer ≥ 1152×1152 (@4x) so @3x and iPad stay sharp.',
+        'iOS $sourcePath is $decoded.width×$decoded.height; '
+        'prefer ≥ $kAndroid12IconXxxhdpiPx×$kAndroid12IconXxxhdpiPx (@4x) '
+        'so @3x and iPad stay sharp (no soft upscale).',
       );
     }
 
@@ -192,14 +213,32 @@ const kVorzelaSplashExitAnimation = SplashExitAnimation.$anim;
       final w = (decoded.width * e.value / kMasterDensity).round().clamp(1, 8192);
       final h =
           (decoded.height * e.value / kMasterDensity).round().clamp(1, 8192);
-      final resized = img.copyResize(
-        decoded,
-        width: w,
-        height: h,
-        interpolation: img.Interpolation.average,
-      );
-      await File(p.join(imagesetDir, e.key)).writeAsBytes(img.encodePng(resized));
+      final resized = _resizeSharp(decoded, w, h);
+      await File(p.join(imagesetDir, e.key))
+          .writeAsBytes(img.encodePng(resized, level: 6));
     }
+  }
+
+  /// Skip no-op resizes; never soft-upscale density buckets.
+  static img.Image _resizeSharp(img.Image src, int w, int h) {
+    if (src.width == w && src.height == h) return src;
+    if (w > src.width || h > src.height) {
+      // Should not happen when source is a true @4x master; keep pixels sharp.
+      final canvas = img.Image(width: w, height: h, numChannels: 4);
+      img.compositeImage(
+        canvas,
+        src,
+        dstX: ((w - src.width) / 2).round().clamp(0, w),
+        dstY: ((h - src.height) / 2).round().clamp(0, h),
+      );
+      return canvas;
+    }
+    return img.copyResize(
+      src,
+      width: w,
+      height: h,
+      interpolation: _sharp,
+    );
   }
 
   static Future<String> remove(String root) async {

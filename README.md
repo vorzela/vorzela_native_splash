@@ -74,9 +74,11 @@ vorzela_native_splash:
 
 **Tip:** Treat the source as an **@4x / xxxhdpi** master (same as
 `flutter_native_splash` 2.4.x). The generator scales with `px = size × density / 4`
-into mdpi→xxxhdpi and iOS @1x/@2x/@3x, preserving aspect ratio. Tablets use the
+using **cubic** interpolation (not soft `average`), and **never upscales** a small
+PNG onto the 1152/960 canvas (that is what makes logos look faint). Tablets use the
 same density buckets (dp); iOS LaunchScreen caps logo width at 38% of the canvas
-so iPad does not look phone-sized.
+so iPad does not look phone-sized. In Flutter, use `SplashLogo.asset(…)` (or
+`filterQuality: FilterQuality.high`) so the handoff mark stays crisp.
 
 ### Official dimensions (Android 12 SplashScreen)
 
@@ -125,7 +127,7 @@ void main() {
     VorzelaSplashGate(
       animation: kVorzelaSplashExitAnimation, // or SplashExitAnimation.scaleFade
       backgroundColor: const Color(0xFF0F0F0F),
-      logo: Image.asset('assets/brand/logo.png', width: 96),
+      logo: SplashLogo.asset('assets/brand/logo.png', width: 96),
       loaderStyle: SplashLoaderStyle.circular, // none | circular | dots | linear
       loaderTheme: const SplashLoaderTheme(
         color: Color(0xFFE50914),

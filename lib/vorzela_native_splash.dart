@@ -6,3 +6,4 @@ export 'src/config.dart' show SplashExitAnimation, parseExitAnimation, SplashCon
 export 'src/dimensions.dart';
 export 'src/loaders.dart';
 export 'src/splash_gate.dart';
+export 'src/splash_logo.dart';

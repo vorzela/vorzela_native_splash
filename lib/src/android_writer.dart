@@ -137,11 +137,15 @@ class AndroidWriter {
 ${hasImage ? '''    <item>
         <bitmap
             android:gravity="center"
+            android:filter="false"
+            android:antialias="true"
             android:src="@drawable/vorzela_splash"/>
     </item>
 ''' : ''}${hasBranding ? '''    <item android:bottom="24dp">
         <bitmap
             android:gravity="bottom|center_horizontal"
+            android:filter="false"
+            android:antialias="true"
             android:src="@drawable/vorzela_branding"/>
     </item>
 ''' : ''}
