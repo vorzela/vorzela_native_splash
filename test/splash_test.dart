@@ -1,8 +1,10 @@
 import 'dart:async';
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:vorzela_native_splash/src/generator.dart';
 import 'package:vorzela_native_splash/vorzela_native_splash.dart';
 
 void main() {
@@ -162,6 +164,53 @@ void main() {
     final v31 = androidDensities(v31: true);
     expect(v31.keys, contains('drawable-mdpi-v31'));
     expect(v31.keys, contains('drawable-xxxhdpi-v31'));
+  });
+
+  test('iOS Contents.json names match written @2x/@3x PNGs', () async {
+    final root = await Directory.systemTemp.createTemp('vorzela_splash_');
+    addTearDown(() => root.delete(recursive: true));
+
+    File('${root.path}/logo.png').writeAsBytesSync(_tinyPng);
+    Directory('${root.path}/ios/Runner/Assets.xcassets')
+        .createSync(recursive: true);
+
+    final result = await SplashGenerator(
+      root: root.path,
+      config: SplashConfig(
+        color: '#000000',
+        image: 'logo.png',
+        brandingImage: 'logo.png',
+        android: false,
+        ios: true,
+      ),
+    ).generate();
+
+    // Warning must show real integers, not "Instance of 'Image'.width".
+    expect(result.summary.contains("Instance of 'Image'"), isFalse);
+    expect(result.summary, contains('1×1'));
+
+    final splashJson = File(
+      '${root.path}/ios/Runner/Assets.xcassets/VorzelaSplash.imageset/Contents.json',
+    ).readAsStringSync();
+    expect(splashJson, contains('"splash@2x.png"'));
+    expect(splashJson, contains('"splash@3x.png"'));
+    expect(splashJson.contains('LaunchImage'), isFalse);
+
+    for (final name in ['splash.png', 'splash@2x.png', 'splash@3x.png']) {
+      expect(
+        File(
+          '${root.path}/ios/Runner/Assets.xcassets/VorzelaSplash.imageset/$name',
+        ).existsSync(),
+        isTrue,
+        reason: '$name must exist on disk',
+      );
+    }
+
+    final brandJson = File(
+      '${root.path}/ios/Runner/Assets.xcassets/VorzelaBranding.imageset/Contents.json',
+    ).readAsStringSync();
+    expect(brandJson, contains('"branding@2x.png"'));
+    expect(brandJson, contains('"branding@3x.png"'));
   });
 }
 

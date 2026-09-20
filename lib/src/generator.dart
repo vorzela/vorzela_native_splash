@@ -22,32 +22,55 @@ class SplashGenerator {
   /// Cubic keeps hard logo edges; [Interpolation.average] softens/blurs marks.
   static const _sharp = img.Interpolation.cubic;
 
+  /// Caches in-flight/decoded source images by resolved path for this
+  /// [generate] run.
+  ///
+  /// The same source file (e.g. `config.image`) is frequently reused for
+  /// several outputs (pre-12 launch bitmap, Android 12 icon, iOS asset), and
+  /// Android/iOS generation now run concurrently. Caching the *Future* (not
+  /// just the decoded result) means concurrent callers await the same
+  /// in-flight decode instead of racing to read + decode the file twice.
+  final Map<String, Future<img.Image>> _decodeCache = {};
+
   Future<GenerateResult> generate() async {
     final lines = <String>['vorzela_native_splash — generating…'];
-    final warnings = <String>[];
+    // Separate lists so concurrent Android/iOS warns don't interleave mid-line
+    // and stay in a deterministic order when merged below.
+    final androidWarnings = <String>[];
+    final iosWarnings = <String>[];
 
+    // Android and iOS output are independent — run them concurrently so
+    // file I/O for one can overlap with the other instead of serializing.
+    final jobs = <Future<void>>[];
     if (config.android) {
       final android = AndroidWriter(root: root, config: config);
-      await android.write(
+      jobs.add(android.write(
         densify: _densifyPng,
         normalizeMaster: _normalizeMaster,
-        warn: warnings.add,
-      );
-      lines.add('✓ Android (SplashScreen + mdpi→xxxhdpi, phones & tablets)');
+        warn: androidWarnings.add,
+      ));
     }
 
     if (config.ios) {
       final ios = IosWriter(root: root, config: config);
-      await ios.write(
+      jobs.add(ios.write(
         densifyIos: _densifyIos,
-        warn: warnings.add,
-      );
+        warn: iosWarnings.add,
+      ));
+    }
+    await Future.wait(jobs);
+
+    // Fixed, deterministic order regardless of which job finished first.
+    if (config.android) {
+      lines.add('✓ Android (SplashScreen + mdpi→xxxhdpi, phones & tablets)');
+    }
+    if (config.ios) {
       lines.add('✓ iOS (LaunchScreen + @1x/@2x/@3x, phone & iPad Auto Layout)');
     }
 
     await _writeGeneratedDartHint();
     lines.add('✓ Flutter handoff hint → lib/generated/vorzela_splash.g.dart');
-    for (final w in warnings) {
+    for (final w in [...androidWarnings, ...iosWarnings]) {
       lines.add('⚠ $w');
     }
     lines.add('');
@@ -82,15 +105,27 @@ const kVorzelaSplashExitAnimation = SplashExitAnimation.$anim;
 ''');
   }
 
-  Future<img.Image> _loadImage(String sourcePath) async {
-    final srcFile =
-        File(p.isAbsolute(sourcePath) ? sourcePath : p.join(root, sourcePath));
+  Future<img.Image> _loadImage(String sourcePath) {
+    final resolvedPath =
+        p.isAbsolute(sourcePath) ? sourcePath : p.join(root, sourcePath);
+    // Reused as-is by every caller (never mutated in place — copyResize /
+    // compositeImage always return new Image instances). When a density
+    // bucket is a no-op resize, [_resizeSharp] clones so concurrent PNG
+    // encodes never share a mutable buffer.
+    return _decodeCache.putIfAbsent(
+      resolvedPath,
+      () => _decodeFromDisk(resolvedPath),
+    );
+  }
+
+  Future<img.Image> _decodeFromDisk(String resolvedPath) async {
+    final srcFile = File(resolvedPath);
     if (!srcFile.existsSync()) {
-      throw StateError('Image not found: ${srcFile.path}');
+      throw StateError('Image not found: $resolvedPath');
     }
     final decoded = img.decodeImage(await srcFile.readAsBytes());
     if (decoded == null) {
-      throw StateError('Could not decode image: ${srcFile.path}');
+      throw StateError('Could not decode image: $resolvedPath');
     }
     // Convert to RGBA so letterboxing stays crisp (no indexed-palette blur).
     return decoded.convert(numChannels: 4);
@@ -110,7 +145,7 @@ const kVorzelaSplashExitAnimation = SplashExitAnimation.$anim;
     final decoded = await _loadImage(sourcePath);
     if (decoded.width < masterWidthPx || decoded.height < masterHeightPx) {
       warn?.call(
-        '$sourcePath is $decoded.width×$decoded.height — too small for a sharp '
+        '$sourcePath is ${decoded.width}×${decoded.height} — too small for a sharp '
         '$masterWidthPx×$masterHeightPx master. Provide a larger PNG '
         '(do not rely on upscaling). Centering original pixels instead.',
       );
@@ -176,8 +211,11 @@ const kVorzelaSplashExitAnimation = SplashExitAnimation.$anim;
     }
 
     final map = folders ?? kAndroidDensities;
-    for (final e in map.entries) {
-      final w = (decoded.width * e.value / kMasterDensity).round().clamp(1, 8192);
+    // Each bucket is an independent resize + encode + write; run them
+    // concurrently so the writes overlap instead of serializing one by one.
+    await Future.wait(map.entries.map((e) async {
+      final w =
+          (decoded.width * e.value / kMasterDensity).round().clamp(1, 8192);
       final h =
           (decoded.height * e.value / kMasterDensity).round().clamp(1, 8192);
       final resized = _resizeSharp(decoded, w, h);
@@ -185,7 +223,7 @@ const kVorzelaSplashExitAnimation = SplashExitAnimation.$anim;
       if (!dir.existsSync()) dir.createSync(recursive: true);
       await File(p.join(dir.path, fileName))
           .writeAsBytes(img.encodePng(resized, level: 6));
-    }
+    }));
   }
 
   Future<void> _densifyIos({
@@ -198,7 +236,7 @@ const kVorzelaSplashExitAnimation = SplashExitAnimation.$anim;
     if (decoded.width < kAndroid12IconXxxhdpiPx ||
         decoded.height < kAndroid12IconXxxhdpiPx) {
       warn?.call(
-        'iOS $sourcePath is $decoded.width×$decoded.height; '
+        'iOS $sourcePath is ${decoded.width}×${decoded.height}; '
         'prefer ≥ $kAndroid12IconXxxhdpiPx×$kAndroid12IconXxxhdpiPx (@4x) '
         'so @3x and iPad stay sharp (no soft upscale).',
       );
@@ -209,19 +247,25 @@ const kVorzelaSplashExitAnimation = SplashExitAnimation.$anim;
       '$baseName@2x.png': 2,
       '$baseName@3x.png': 3,
     };
-    for (final e in files.entries) {
-      final w = (decoded.width * e.value / kMasterDensity).round().clamp(1, 8192);
+    await Future.wait(files.entries.map((e) async {
+      final w =
+          (decoded.width * e.value / kMasterDensity).round().clamp(1, 8192);
       final h =
           (decoded.height * e.value / kMasterDensity).round().clamp(1, 8192);
       final resized = _resizeSharp(decoded, w, h);
       await File(p.join(imagesetDir, e.key))
           .writeAsBytes(img.encodePng(resized, level: 6));
-    }
+    }));
   }
 
   /// Skip no-op resizes; never soft-upscale density buckets.
+  ///
+  /// Always returns a buffer that callers may encode concurrently — never
+  /// the live cached decode (a no-op size match clones instead).
   static img.Image _resizeSharp(img.Image src, int w, int h) {
-    if (src.width == w && src.height == h) return src;
+    if (src.width == w && src.height == h) {
+      return img.Image.from(src);
+    }
     if (w > src.width || h > src.height) {
       // Should not happen when source is a true @4x master; keep pixels sharp.
       final canvas = img.Image(width: w, height: h, numChannels: 4);

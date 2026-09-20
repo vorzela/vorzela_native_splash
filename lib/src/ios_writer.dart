@@ -43,8 +43,8 @@ class IosWriter {
 {
   "images" : [
     { "filename" : "splash.png", "idiom" : "universal", "scale" : "1x" },
-    { "filename" : "wendy.h@example.net", "idiom" : "universal", "scale" : "2x" },
-    { "filename" : "frank.g@example.org", "idiom" : "universal", "scale" : "3x" }
+    { "filename" : "splash@2x.png", "idiom" : "universal", "scale" : "2x" },
+    { "filename" : "splash@3x.png", "idiom" : "universal", "scale" : "3x" }
   ],
   "info" : { "author" : "vorzela", "version" : 1 }
 }
@@ -65,8 +65,8 @@ class IosWriter {
 {
   "images" : [
     { "filename" : "branding.png", "idiom" : "universal", "scale" : "1x" },
-    { "filename" : "david.c@example.com", "idiom" : "universal", "scale" : "2x" },
-    { "filename" : "alice.j@example.com", "idiom" : "universal", "scale" : "3x" }
+    { "filename" : "branding@2x.png", "idiom" : "universal", "scale" : "2x" },
+    { "filename" : "branding@3x.png", "idiom" : "universal", "scale" : "3x" }
   ],
   "info" : { "author" : "vorzela", "version" : 1 }
 }
