@@ -189,6 +189,18 @@ dart run vorzela_native_splash:remove
 
 ---
 
+## Linter (best practices)
+
+Use [`vorzela_native_splash_lint`](packages/vorzela_native_splash_lint) with
+`custom_lint` ^0.8.1:
+
+- call `VorzelaNativeSplash.preserve()` before `runApp(VorzelaSplashGate(…))`
+- prefer `SplashLogo` / `SplashLogo.asset` for `logo:` (not raw `Image.asset`)
+
+See [packages/vorzela_native_splash_lint/README.md](packages/vorzela_native_splash_lint/README.md).
+
+---
+
 ## License
 
 MIT — see [LICENSE](LICENSE).

@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.0.7
+
+### Added
+- **`packages/vorzela_native_splash_lint`** — `custom_lint` rules for
+  `preserve()` before `runApp` and `SplashLogo` for gate logos.
+
 ## 0.0.6
 
 ### Fixed

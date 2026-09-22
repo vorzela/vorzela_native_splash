@@ -1,0 +1,8 @@
+analyzer:
+  plugins:
+    - custom_lint
+include: package:flutter_lints/flutter.yaml
+custom_lint:
+  rules:
+    - prefer_preserve_before_run_app
+    - prefer_splash_logo
