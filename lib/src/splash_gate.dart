@@ -54,6 +54,7 @@ class VorzelaSplashGate extends StatefulWidget {
     this.animation = SplashExitAnimation.scaleFade,
     this.duration = const Duration(milliseconds: 700),
     this.ready,
+    this.semanticLabel = 'Loading',
   });
 
   final Widget child;
@@ -102,6 +103,9 @@ class VorzelaSplashGate extends StatefulWidget {
 
   /// When complete, splash animates out. Defaults to first frame.
   final Future<void>? ready;
+
+  /// Accessibility label for the splash overlay while visible.
+  final String semanticLabel;
 
   @override
   State<VorzelaSplashGate> createState() => _VorzelaSplashGateState();
@@ -209,59 +213,65 @@ class _VorzelaSplashGateState extends State<VorzelaSplashGate>
       children: [
         widget.child,
         IgnorePointer(
-          child: AnimatedBuilder(
-            animation: _t,
-            builder: (context, _) {
-              final t = _t.value;
-              final opacity = (1.0 - t).clamp(0.0, 1.0);
-              final scale = switch (widget.animation) {
-                SplashExitAnimation.scaleFade => 1.0 + 0.12 * t,
-                SplashExitAnimation.pulse =>
-                  1.0 + 0.06 * (t < 0.5 ? t * 2 : 1),
-                _ => 1.0,
-              };
-              return Opacity(
-                opacity: opacity,
-                child: ColoredBox(
-                  color: bg,
-                  child: Stack(
-                    fit: StackFit.expand,
-                    children: [
-                      Center(
-                        child: Transform.scale(
-                          scale: scale,
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              widget.logo ??
-                                  const Icon(
-                                    Icons.circle,
-                                    size: 72,
-                                    color: Colors.white,
-                                  ),
-                              if (loader != null) ...[
-                                SizedBox(height: widget.logoLoaderGap),
-                                loader,
+          child: Semantics(
+            label: widget.semanticLabel,
+            liveRegion: true,
+            child: AnimatedBuilder(
+              animation: _t,
+              builder: (context, _) {
+                final t = _t.value;
+                final opacity = (1.0 - t).clamp(0.0, 1.0);
+                final scale = switch (widget.animation) {
+                  SplashExitAnimation.scaleFade => 1.0 + 0.12 * t,
+                  SplashExitAnimation.pulse =>
+                    1.0 + 0.06 * (t < 0.5 ? t * 2 : 1),
+                  _ => 1.0,
+                };
+                return Opacity(
+                  opacity: opacity,
+                  child: ColoredBox(
+                    color: bg,
+                    child: Stack(
+                      fit: StackFit.expand,
+                      children: [
+                        Center(
+                          child: Transform.scale(
+                            scale: scale,
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                widget.logo ??
+                                    const ExcludeSemantics(
+                                      child: Icon(
+                                        Icons.circle,
+                                        size: 72,
+                                        color: Colors.white,
+                                      ),
+                                    ),
+                                if (loader != null) ...[
+                                  SizedBox(height: widget.logoLoaderGap),
+                                  loader,
+                                ],
                               ],
-                            ],
+                            ),
                           ),
                         ),
-                      ),
-                      if (footer != null)
-                        Positioned(
-                          left: 0,
-                          right: 0,
-                          bottom: bottomInset,
-                          child: Padding(
-                            padding: widget.footerPadding,
-                            child: footer,
+                        if (footer != null)
+                          Positioned(
+                            left: 0,
+                            right: 0,
+                            bottom: bottomInset,
+                            child: Padding(
+                              padding: widget.footerPadding,
+                              child: footer,
+                            ),
                           ),
-                        ),
-                    ],
+                      ],
+                    ),
                   ),
-                ),
-              );
-            },
+                );
+              },
+            ),
           ),
         ),
       ],

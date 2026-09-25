@@ -116,14 +116,18 @@ class SplashCircularLoader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      width: size,
-      height: size,
-      child: CircularProgressIndicator(
-        strokeWidth: strokeWidth,
-        strokeCap: strokeCap,
-        backgroundColor: trackColor,
-        valueColor: AlwaysStoppedAnimation<Color>(color),
+    return Semantics(
+      label: 'Loading',
+      liveRegion: true,
+      child: SizedBox(
+        width: size,
+        height: size,
+        child: CircularProgressIndicator(
+          strokeWidth: strokeWidth,
+          strokeCap: strokeCap,
+          backgroundColor: trackColor,
+          valueColor: AlwaysStoppedAnimation<Color>(color),
+        ),
       ),
     );
   }
@@ -155,15 +159,19 @@ class SplashLinearLoader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      width: width,
-      height: height,
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(height),
-        child: LinearProgressIndicator(
-          backgroundColor:
-              trackColor ?? color.withValues(alpha: 0.18),
-          valueColor: AlwaysStoppedAnimation<Color>(color),
+    return Semantics(
+      label: 'Loading',
+      liveRegion: true,
+      child: SizedBox(
+        width: width,
+        height: height,
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(height),
+          child: LinearProgressIndicator(
+            backgroundColor:
+                trackColor ?? color.withValues(alpha: 0.18),
+            valueColor: AlwaysStoppedAnimation<Color>(color),
+          ),
         ),
       ),
     );
@@ -216,35 +224,41 @@ class _SplashDotsLoaderState extends State<SplashDotsLoader>
 
   @override
   Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: _c,
-      builder: (context, _) {
-        return Row(
-          mainAxisSize: MainAxisSize.min,
-          children: List.generate(3, (i) {
-            final phase = (_c.value + i * 0.22) % 1.0;
-            final bounce = math.sin(phase * math.pi);
-            final opacity = 0.35 + 0.65 * bounce;
-            return Padding(
-              padding: EdgeInsets.only(right: i == 2 ? 0 : widget.gap),
-              child: Opacity(
-                opacity: opacity,
-                child: Transform.translate(
-                  offset: Offset(0, -3 * bounce),
-                  child: Container(
-                    width: widget.dotSize,
-                    height: widget.dotSize,
-                    decoration: BoxDecoration(
-                      color: widget.color,
-                      shape: BoxShape.circle,
+    return Semantics(
+      label: 'Loading',
+      liveRegion: true,
+      child: AnimatedBuilder(
+        animation: _c,
+        builder: (context, _) {
+          return ExcludeSemantics(
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: List.generate(3, (i) {
+                final phase = (_c.value + i * 0.22) % 1.0;
+                final bounce = math.sin(phase * math.pi);
+                final opacity = 0.35 + 0.65 * bounce;
+                return Padding(
+                  padding: EdgeInsets.only(right: i == 2 ? 0 : widget.gap),
+                  child: Opacity(
+                    opacity: opacity,
+                    child: Transform.translate(
+                      offset: Offset(0, -3 * bounce),
+                      child: Container(
+                        width: widget.dotSize,
+                        height: widget.dotSize,
+                        decoration: BoxDecoration(
+                          color: widget.color,
+                          shape: BoxShape.circle,
+                        ),
+                      ),
                     ),
                   ),
-                ),
-              ),
-            );
-          }),
-        );
-      },
+                );
+              }),
+            ),
+          );
+        },
+      ),
     );
   }
 }

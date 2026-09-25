@@ -11,6 +11,8 @@ class SplashLogo extends StatelessWidget {
     this.width,
     this.height,
     this.fit = BoxFit.contain,
+    this.semanticLabel,
+    this.excludeFromSemantics = false,
   });
 
   /// Convenience for asset logos (most common handoff case).
@@ -20,6 +22,8 @@ class SplashLogo extends StatelessWidget {
     this.width = 96,
     this.height,
     this.fit = BoxFit.contain,
+    this.semanticLabel,
+    this.excludeFromSemantics = false,
     AssetBundle? bundle,
     String? package,
   }) : image = Image.asset(
@@ -32,23 +36,35 @@ class SplashLogo extends StatelessWidget {
           gaplessPlayback: true,
           bundle: bundle,
           package: package,
+          semanticLabel: semanticLabel,
+          excludeFromSemantics: excludeFromSemantics,
         );
 
   final Widget image;
   final double? width;
   final double? height;
   final BoxFit fit;
+  final String? semanticLabel;
+  final bool excludeFromSemantics;
 
   @override
   Widget build(BuildContext context) {
     final child = image is Image
         ? _withHighQuality(image as Image)
         : image;
-    if (width == null && height == null) return child;
-    return SizedBox(width: width, height: height, child: child);
+    final labeled = semanticLabel != null || excludeFromSemantics
+        ? Semantics(
+            label: semanticLabel,
+            excludeSemantics: excludeFromSemantics,
+            image: !excludeFromSemantics,
+            child: child,
+          )
+        : child;
+    if (width == null && height == null) return labeled;
+    return SizedBox(width: width, height: height, child: labeled);
   }
 
-  static Widget _withHighQuality(Image image) {
+  Widget _withHighQuality(Image image) {
     return Image(
       image: image.image,
       width: image.width,
@@ -60,8 +76,9 @@ class SplashLogo extends StatelessWidget {
       filterQuality: FilterQuality.high,
       isAntiAlias: true,
       gaplessPlayback: true,
-      semanticLabel: image.semanticLabel,
-      excludeFromSemantics: image.excludeFromSemantics,
+      semanticLabel: semanticLabel ?? image.semanticLabel,
+      excludeFromSemantics:
+          excludeFromSemantics || image.excludeFromSemantics,
       opacity: image.opacity,
     );
   }

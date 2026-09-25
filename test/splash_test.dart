@@ -212,6 +212,26 @@ void main() {
     expect(brandJson, contains('"branding@2x.png"'));
     expect(brandJson, contains('"branding@3x.png"'));
   });
+
+  testWidgets('splash overlay exposes loading semantics', (tester) async {
+    final handle = tester.ensureSemantics();
+    final hold = Completer<void>();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: VorzelaSplashGate(
+          animation: SplashExitAnimation.none,
+          loaderStyle: SplashLoaderStyle.none,
+          semanticLabel: 'App loading',
+          ready: hold.future,
+          child: const Scaffold(body: Text('home')),
+        ),
+      ),
+    );
+    await tester.pump();
+    expect(find.bySemanticsLabel('App loading'), findsOneWidget);
+    handle.dispose();
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
 }
 
 /// 1×1 transparent PNG.

@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.0.8
+
+### Added
+- **Semantics** on splash gate (`semanticLabel`, live region), loaders, and
+  optional `SplashLogo.semanticLabel` / `excludeFromSemantics`.
+
 ## 0.0.7
 
 ### Added
